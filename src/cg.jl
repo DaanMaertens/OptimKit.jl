@@ -11,11 +11,11 @@ struct ConjugateGradient{F<:CGFlavor,T<:Real,L<:AbstractLineSearch} <: Optimizat
 end
 ConjugateGradient(; flavor = HagerZhang(), maxiter = typemax(Int), gradtol::Real = 1e-8,
         restart = typemax(Int), verbosity::Int = 0,
-        linesearch::AbstractLineSearch = HagerZhangLineSearch(;verbosity = verbosity - 2)) =
+        linesearch::AbstractLineSearch = HagerZhangLineSearch(;verbosity = verbosity - 3)) =
     ConjugateGradient(flavor, maxiter, gradtol, linesearch, restart, verbosity)
 
 function optimize(fg, x, alg::ConjugateGradient;
-                    precondition = _precondition, finalize! = _finalize!,
+                    precondition = _precondition, finalize! = _finalize_forcecont!,
                     retract = _retract, inner = _inner, transport! = _transport!,
                     scale! = _scale!, add! = _add!,
                     isometrictransport = (transport! == _transport! && inner == _inner))
@@ -69,14 +69,14 @@ function optimize(fg, x, alg::ConjugateGradient;
             initialguess = α, retract = retract, inner = inner)
         numfg += nfg
         numiter += 1
-        x, f, g = finalize!(x, f, g, numiter)
+        x, f, g, force_cont = finalize!(x, f, g, numiter)
         innergg = inner(x, g, g)
         normgrad = sqrt(innergg)
         push!(fhistory, f)
         push!(normgradhistory, normgrad)
 
         # check stopping criteria and print info
-        if normgrad <= alg.gradtol || numiter >= alg.maxiter
+        if !force_cont && (normgrad <= alg.gradtol || numiter >= alg.maxiter)
             break
         end
         verbosity >= 2 &&
@@ -100,7 +100,7 @@ function optimize(fg, x, alg::ConjugateGradient;
             @info @sprintf("CG: converged after %d iterations: f = %.12f, ‖∇f‖ = %.4e",
                             numiter, f, normgrad)
         else
-            @warn @sprintf("CG: not converged to requested tol: f = %.12f, ‖∇f‖ = %.4e",
+            verbosity <= 2 && @warn @sprintf("CG: not converged to requested tol: f = %.12f, ‖∇f‖ = %.4e",
                             f, normgrad)
         end
     end
